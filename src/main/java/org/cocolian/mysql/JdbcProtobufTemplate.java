@@ -25,6 +25,8 @@ import org.cocolian.mysql.taglib.TableMessageOption;
 import org.cocolian.mysql.taglib.Taglib;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.InvalidPropertyException;
+import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
@@ -37,23 +39,23 @@ import com.google.protobuf.Message;
 
 /**
  * 存取Protobuf message 数据对象到JDBC数据库中， 是对<code>JdbcTemplate</code>的一个封装。
+ * 要求对存储的对象，使用protobuf来定义， 并通过option来注释相关内容： table: 在message上，用来标记所在的表名
+ * column-name : 在field上，用来标记存储的列 primary-key: 在field上，用来标记主键
  * 
  * @author shamphone@gmail.com
  * @version 1.0.0
  * @date 2017年8月9日
- * @param <ID>
- *            ID的数据类型
  * @param <M>
  *            message的数据类型
  */
-public class JdbcProtobufTemplate<ID, M extends Message> {
-	
+public class JdbcProtobufTemplate<M extends Message> {
+
 	private static Logger logger = LoggerFactory.getLogger(JdbcProtobufTemplate.class);
+
 	/**
 	 * 数据库行映射到 protobuf message对象
 	 */
-	public class ProtobufMessageRowMapper<N extends Message> implements
-			RowMapper<N> {
+	public class ProtobufMessageRowMapper<N extends Message> implements RowMapper<N> {
 		@SuppressWarnings("unchecked")
 		@Override
 		public N mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -63,21 +65,12 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 		}
 	}
 
-	protected Class<M> messageClass;
-	protected Descriptors.Descriptor descriptor;
-	protected JdbcTemplate jdbcTemplate;
-	protected String tableName;
-
-	public JdbcProtobufTemplate(JdbcTemplate jdbcTemplate) {
-		this(jdbcTemplate, null);
-	}
+	private Class<M> messageClass;
+	private Descriptors.Descriptor descriptor;
+	private JdbcTemplate jdbcTemplate;
+	private String _tableName = null;
 
 	public JdbcProtobufTemplate(JdbcTemplate jdbcTemplate, Class<M> messageClass) {
-		this(jdbcTemplate, messageClass, null);
-	}
-
-	public JdbcProtobufTemplate(JdbcTemplate jdbcTemplate,
-			Class<M> messageClass, String tableName) {
 		this.jdbcTemplate = jdbcTemplate;
 		if (messageClass == null) {
 			this.messageClass = this.parseMessageClass();
@@ -85,44 +78,36 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 			this.messageClass = messageClass;
 		}
 		this.descriptor = this.getDescriptor(messageClass);
-		if (tableName == null) {
-			this.tableName = this.parseTableName();
-		} else {
-			this.tableName = tableName;
-		}
-
 	}
 
+	@SuppressWarnings("unchecked")
 	private Class<M> parseMessageClass() {
 		Type genType = getClass().getGenericSuperclass();
 		Type[] params = ((ParameterizedType) genType).getActualTypeArguments();
 		for (Type type : params) {// 查找 message类
-			if (type instanceof Class
-					&& Message.class.isAssignableFrom((Class) type)) {
-				return (Class) type;
+			if (type instanceof Class && Message.class.isAssignableFrom((Class<?>) type)) {
+				return (Class<M>) type;
 			}
 		}
 		return null;
 	}
 
-	private String parseTableName() {
-		TableMessageOption tableMessageOption = descriptor.getOptions()
-				.getExtension(Taglib.tableOption);
-		// 默认从protobuf配置中查询表名
-		if (tableMessageOption != null
-				&& StringUtils.isNotBlank(tableMessageOption.getTableName())) {
-			return tableMessageOption.getTableName();
+	protected synchronized String getTableName(M message) {
+		if (this._tableName == null) {
+			TableMessageOption tableMessageOption = descriptor.getOptions().getExtension(Taglib.tableOption);
+			// 默认从protobuf配置中查询表名
+			if (tableMessageOption != null && StringUtils.isNotBlank(tableMessageOption.getTableName())) {
+				this._tableName = tableMessageOption.getTableName();
+			}
 		}
-		return null;
+		return this._tableName;
 	}
 
 	private Descriptors.Descriptor getDescriptor(Class<M> messageClass) {
 		try {
-			return (Descriptors.Descriptor) MethodUtils.invokeStaticMethod(
-					messageClass, "getDescriptor");
-		} catch (NoSuchMethodException | IllegalAccessException
-				| InvocationTargetException ex) {
-			throw new RuntimeException(ex);
+			return (Descriptors.Descriptor) MethodUtils.invokeStaticMethod(messageClass, "getDescriptor");
+		} catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException ex) {
+			throw new InvalidPropertyException(messageClass, "descriptor", "Could not found getDescriptor method.");
 		}
 	}
 
@@ -136,8 +121,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	public M get(String sql, Object... args) {
 		logger.debug(sql);
 		try {
-			return jdbcTemplate.queryForObject(sql,
-					new ProtobufMessageRowMapper<M>(), args);
+			return jdbcTemplate.queryForObject(sql, new ProtobufMessageRowMapper<M>(), args);
 		} catch (EmptyResultDataAccessException ex) {
 			return null;
 		}
@@ -170,7 +154,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @return
 	 */
 	public int update(final String sql, final List<?> args) {
-		if(logger.isDebugEnabled()){
+		if (logger.isDebugEnabled()) {
 			StringBuilder builder = new StringBuilder();
 			builder.append("{sql: \"").append(sql).append("\"; parameters:").append(args);
 			logger.debug(builder.toString());
@@ -178,8 +162,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 		return jdbcTemplate.update(new PreparedStatementCreator() {
 
 			@Override
-			public PreparedStatement createPreparedStatement(Connection con)
-					throws SQLException {
+			public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
 				PreparedStatement ps = con.prepareStatement(sql);
 				populate(ps, args);
 				return ps;
@@ -196,8 +179,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @return
 	 * @throws SQLException
 	 */
-	private void populate(PreparedStatement ps, List<?> args)
-			throws SQLException {
+	private void populate(PreparedStatement ps, List<?> args) throws SQLException {
 		for (int i = 0; i < args.size(); i++) {
 			Object o = args.get(i);
 			if (o instanceof Integer) {
@@ -212,17 +194,14 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 				ps.setFloat(i + 1, (Float) o);
 			} else if (o instanceof Double) {
 				ps.setDouble(i + 1, (Double) o);
-			} else if (o instanceof Date) {
-				ps.setDate(i + 1, (Date) o);
 			} else if (o instanceof Timestamp) {
 				ps.setTimestamp(i + 1, (Timestamp) o);
 			} else if (o instanceof Descriptors.EnumValueDescriptor) {
-				ps.setInt(i + 1,
-						((Descriptors.EnumValueDescriptor) o).getNumber());
-			} else if(o instanceof Boolean){
-				ps.setBoolean(i+1, (Boolean)o);
+				ps.setInt(i + 1, ((Descriptors.EnumValueDescriptor) o).getNumber());
+			} else if (o instanceof Boolean) {
+				ps.setBoolean(i + 1, (Boolean) o);
 			} else {
-				ps.setObject(i+1, o);
+				ps.setObject(i + 1, o);
 			}
 		}
 	}
@@ -233,8 +212,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @param builder
 	 * @throws SQLException
 	 */
-	private void populate(ResultSet rs, Message.Builder builder)
-			throws SQLException {
+	private void populate(ResultSet rs, Message.Builder builder) throws SQLException {
 		ResultSetMetaData metaData = rs.getMetaData();
 		int columnCount = metaData.getColumnCount();// 列个数
 		String columnLabel = null;// 列名
@@ -250,11 +228,9 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 				continue;// 如果为空，继续下一个
 			// 转换为相应的类型 ，会自动将 date 类型转换为long
 			if (fieldDescriptor.getType().equals(FieldDescriptor.Type.ENUM)) {
-				columnValue = fieldDescriptor.getEnumType().findValueByNumber(
-						(int) columnValue);
+				columnValue = fieldDescriptor.getEnumType().findValueByNumber((int) columnValue);
 			} else {
-				columnValue = ConvertUtils.convert(columnValue, fieldDescriptor
-						.getDefaultValue().getClass());
+				columnValue = ConvertUtils.convert(columnValue, fieldDescriptor.getDefaultValue().getClass());
 			}
 			builder.setField(fieldDescriptor, columnValue);
 		}
@@ -267,7 +243,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @return
 	 */
 	public long insert(M message) {
-		return insert(message, this.tableName);
+		return insert(message, this.getTableName(message));
 	}
 
 	/**
@@ -277,7 +253,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @param tableName
 	 * @return
 	 */
-	public long insert(M message, String tableName) {
+	protected long insert(M message, String tableName) {
 		StringBuilder insertSql = new StringBuilder("insert into ");
 		insertSql.append(tableName).append("(");
 		StringBuilder fields = new StringBuilder("");
@@ -288,8 +264,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 		for (Entry<FieldDescriptor, Object> entry : fieldMap.entrySet()) {
 			FieldDescriptor fieldDescriptor = entry.getKey();
 			FieldOptions fieldOptions = fieldDescriptor.getOptions();
-			ColumnFieldOption columnFieldOption = fieldOptions
-					.getExtension(Taglib.columnOption);
+			ColumnFieldOption columnFieldOption = fieldOptions.getExtension(Taglib.columnOption);
 			String fieldName = fieldDescriptor.getName();
 			Object value = entry.getValue();
 
@@ -319,24 +294,11 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @param message
 	 * @param conditionFields
 	 * @param conditionParams
-	 * @return
-	 */
-	protected int updateMessageByCondition(M message, String[] conditionFields,
-			Object[] conditionParams) {
-		return updateMessageByCondition(message, conditionFields,
-				conditionParams, this.tableName);
-	}
-
-	/**
-	 * 
-	 * @param message
-	 * @param conditionFields
-	 * @param conditionParams
 	 * @param tableName
 	 * @return
 	 */
-	protected int updateMessageByCondition(M message, String[] conditionFields,
-			Object[] conditionParams, String tableName) {
+	protected int updateMessageByCondition(M message, String[] conditionFields, Object[] conditionParams,
+			String tableName) {
 		StringBuilder updateSql = new StringBuilder("update ");
 		updateSql.append(tableName).append(" set ");
 		StringBuilder options = new StringBuilder("");
@@ -345,11 +307,9 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 
 		for (Entry<FieldDescriptor, Object> entry : fieldMap.entrySet()) {
 			FieldDescriptor fieldDescriptor = entry.getKey();
-			if (!Arrays.asList(conditionFields).contains(
-					fieldDescriptor.getName())) {
+			if (!Arrays.asList(conditionFields).contains(fieldDescriptor.getName())) {
 				FieldOptions fieldOptions = fieldDescriptor.getOptions();
-				ColumnFieldOption columnFieldOption = fieldOptions
-						.getExtension(Taglib.columnOption);
+				ColumnFieldOption columnFieldOption = fieldOptions.getExtension(Taglib.columnOption);
 				String fieldName = fieldDescriptor.getName();
 				Object value = entry.getValue();
 				if (columnFieldOption.getColumnType() == ColumnType.DATETIME
@@ -371,8 +331,7 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 			throw new IllegalArgumentException("condition error");
 		} else {
 			for (int i = 0; i < conditionFields.length; i++) {
-				condition.append("AND ").append(conditionFields[i])
-						.append("=? ");
+				condition.append("AND ").append(conditionFields[i]).append("=? ");
 				args.add(conditionParams[i]);
 			}
 			updateSql.append(condition);
@@ -409,14 +368,12 @@ public class JdbcProtobufTemplate<ID, M extends Message> {
 	 * @throws IllegalAccessException
 	 * @throws NoSuchMethodException
 	 */
-	public static <T extends Message> T.Builder newBuilder(Class<T> messageClass) {
+	private <T extends Message> T.Builder newBuilder(Class<T> messageClass) {
 		T.Builder builder = null;
 		try {
-			builder = (T.Builder) MethodUtils.invokeStaticMethod(messageClass,
-					"newBuilder");
-		} catch (NoSuchMethodException | IllegalAccessException
-				| InvocationTargetException e) {
-			throw new RuntimeException(e);
+			builder = (T.Builder) MethodUtils.invokeStaticMethod(messageClass, "newBuilder");
+		} catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+			throw new BeanCreationException("Error in create Message instance, " + messageClass + ".", e);
 		}
 		return builder;
 	}
