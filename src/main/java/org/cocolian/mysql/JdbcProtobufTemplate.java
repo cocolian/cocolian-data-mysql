@@ -39,8 +39,11 @@ import com.google.protobuf.Message;
 
 /**
  * 存取Protobuf message 数据对象到JDBC数据库中， 是对<code>JdbcTemplate</code>的一个封装。
- * 要求对存储的对象，使用protobuf来定义， 并通过option来注释相关内容： table: 在message上，用来标记所在的表名
- * column-name : 在field上，用来标记存储的列 primary-key: 在field上，用来标记主键
+ * 要求对存储的对象，使用protobuf来定义， 并通过option来注释相关内容：<ul> 
+ * <li>table: 在message上，用来标记所在的表名</li>
+ * <li>column-name : 在field上，用来标记存储的列</li> 
+ * <li>primary-key: 在field上，用来标记主键</li>
+ * </ul>
  * 
  * @author shamphone@gmail.com
  * @version 1.0.0
@@ -346,7 +349,7 @@ public class JdbcProtobufTemplate<M extends Message> {
 	 * 
 	 * @return
 	 */
-	protected String buildSelectStatement() {
+	private String buildSelectStatement() {
 		StringBuilder statement = new StringBuilder();
 		List<FieldDescriptor> fields = descriptor.getFields();
 		for (int i = 0; i < fields.size(); i++) {
