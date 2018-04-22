@@ -66,3 +66,4 @@ template.remove(foo.getId()); //删除；
 
 - Google Protobuf : 核心数据表示
 - Spring JdbcTemplate: 使用spring 的这个类来操作数据库。 
+
