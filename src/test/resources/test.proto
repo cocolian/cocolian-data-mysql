@@ -1,0 +1,18 @@
+syntax = "proto2";
+option java_package = "org.cocolian.mysql.foo";
+option java_multiple_files = true; //指定生成多个类
+
+import "taglib.proto";
+
+
+message Foo {
+    option (table_option).table_name = "test_foo"; //定义Foo存储对应的table名称，如果没有，则默认使用 foo作为表名 。
+    option (table_option).primary_key = "col1"; //主键
+
+    required string col1 = 1 [(column_option).column_name = "col1", (column_option).column_type = VARCHAR, (column_option).need_encrypted_store = true]; //定义列名和数据类型，默认为字段名和字段类型。
+    optional int32 col2 = 2 [(column_option).column_name = "col2"]; //定义列名和数据类型，默认为字段名和字段类型。
+    optional double col3 = 3 [(column_option).column_type = DOUBLE]; //定义列名和数据类型，默认为字段名和字段类型。
+
+}
+
+
