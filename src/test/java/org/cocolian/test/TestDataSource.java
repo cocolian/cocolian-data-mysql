@@ -1,4 +1,4 @@
-package org.cocolian.mysql;
+package org.cocolian.test;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;

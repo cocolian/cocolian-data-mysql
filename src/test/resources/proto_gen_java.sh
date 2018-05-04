@@ -4,7 +4,7 @@
 PROTO_RES_HOME="$PWD"
 echo "res home ==> $PROTO_RES_HOME"
 
-PROTO_OUT_HOME="$PROTO_RES_HOME/../java"
+PROTO_OUT_HOME="$PROTO_RES_HOME/../gen"
 echo "proto out home ==> $PROTO_OUT_HOME"
 
 echo "start generator proto to java files .."

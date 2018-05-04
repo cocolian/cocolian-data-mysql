@@ -1,5 +1,6 @@
+package org.cocolian.test;
+
 import org.cocolian.mysql.JdbcProtobufTemplate;
-import org.cocolian.mysql.TestDataSource;
 import org.cocolian.mysql.foo.Foo;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -17,7 +18,7 @@ public class TestInsertMethod {
         JdbcProtobufTemplate jdbc = new JdbcProtobufTemplate<Foo>(TestDataSource.getJdbcTemplate(), Foo.class);
 
         Foo.Builder foo = Foo.newBuilder();
-        foo.setCol1("cocolian"+ UUID.randomUUID().toString());
+        foo.setCol1("cocolian" + UUID.randomUUID().toString());
         foo.setCol2(new Random().nextInt(Integer.MAX_VALUE));
         foo.setCol3(new Random().nextDouble());
 
