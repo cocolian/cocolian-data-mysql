@@ -1,5 +1,6 @@
+package org.cocolian.test;
+
 import org.cocolian.mysql.JdbcProtobufTemplate;
-import org.cocolian.mysql.TestDataSource;
 import org.cocolian.mysql.foo.Foo;
 import org.junit.Test;
 import org.slf4j.Logger;
