@@ -284,16 +284,23 @@ public class JdbcProtobufTemplate<M extends Message> {
     }
 
     /**
-     * 仅更新对象中有设置值的部分
+     * 根据主键更新，仅更新对象中有设置值的部分
      * @param message
      * @return
      */
     public int partialUpdate(M message){
+    	
+    	String keyName=getPrimaryKeyName(message);
+    	if(keyName==null){
+    		//对象里没有主键，不更新
+    		return 0;
+    	}
+    	
         StringBuilder updateSql = new StringBuilder("update ");
         updateSql.append(getTableName(message)).append(" set ");
 
         StringBuilder conditionSql = new StringBuilder(" where ");
-        conditionSql.append(getPrimaryKeyName(message)).append(" =?");
+        conditionSql.append(keyName).append(" =?");
 
         StringBuilder selectSql = new StringBuilder("select * from ");
         selectSql.append(getTableName(message));
@@ -302,54 +309,38 @@ public class JdbcProtobufTemplate<M extends Message> {
 
         StringBuilder fields = new StringBuilder("");
         Map<Object,Object> paramsMap = new LinkedHashMap<>();
-        List<Object> keyArgs = new ArrayList<>();
+        List<Object> keyArgs = new LinkedList<>();
 
         Map<Descriptors.FieldDescriptor, Object> fieldMap = message.getAllFields();
-
+        Object keyValue=null;
         for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : fieldMap.entrySet()) {
             Descriptors.FieldDescriptor fieldDescriptor = entry.getKey();
             DescriptorProtos.FieldOptions fieldOptions = fieldDescriptor.getOptions();
             ColumnFieldOption columnFieldOption = fieldOptions.getExtension(Taglib.columnOption);
             String fieldName = fieldDescriptor.getName();
             Object value = entry.getValue();
-
+           
+            if (keyName.equals(fieldName)){
+            	keyValue=value;
+            }
+            fields.append(fieldName).append("=?, ");
             if (columnFieldOption.getColumnType() == ColumnType.DATETIME
                     || columnFieldOption.getColumnType() == ColumnType.TIMESTAMP) {// datetime类型
                 if (value != null && (long) value > 0) {
-                    paramsMap.put(fieldName, new Timestamp((long) value));
+                	keyArgs.add(new Timestamp((long) value));
                 }
             } else {
-                paramsMap.put(fieldName, value);
+            	   keyArgs.add(value);
             }
 
         }
 
-        keyArgs.add(paramsMap.get(getPrimaryKeyName(message)));
-        M dbObj = get(selectSql.toString(),keyArgs);
-
-        List<Object> args = new ArrayList<Object>();
-        for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : dbObj.getAllFields().entrySet()) {
-            Descriptors.FieldDescriptor fieldDescriptor = entry.getKey();
-            String fieldName = fieldDescriptor.getName();
-            Object value = entry.getValue();
-
-            if(!paramsMap.get(fieldName).equals(value)){
-                fields.append(fieldName).append("=?, ");
-                args.add(paramsMap.get(fieldName));
-            }
-        }
-        if(args.isEmpty()){
-            //no data change
-            logger.debug("no data change.");
-            return 0;
-        }
-
+        keyArgs.add(keyValue);
         int tmpIndex = fields.lastIndexOf(",");
         updateSql.append(fields.substring(0, tmpIndex));
         updateSql.append(conditionSql.toString());
 
-        args.addAll(keyArgs);
-        return update(updateSql.toString(),args);
+        return update(updateSql.toString(),keyArgs);
     }
 
     /**
